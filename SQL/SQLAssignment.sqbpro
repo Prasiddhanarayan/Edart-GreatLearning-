@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="C:/Users/hp/Desktop/sql/chinook (1).db" readonly="0" foreign_keys="1" case_sensitive_like="0" temp_store="0" wal_autocheckpoint="1000" synchronous="2"/><attached/><window><main_tabs open="structure browser pragmas query" current="3"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="125"/><column_width id="3" width="2511"/><column_width id="4" width="0"/><expanded_item id="0" parent="1"/><expanded_item id="1" parent="1"/><expanded_item id="2" parent="1"/><expanded_item id="3" parent="1"/></tab_structure><tab_browse><current_table name="4,7:main5unique"/><default_encoding codec=""/><browse_table_settings><table schema="main" name="5unique" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_"><sort/><column_widths><column index="1" value="52"/><column index="2" value="55"/><column index="3" value="62"/><column index="4" value="62"/><column index="5" value="62"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table><table schema="main" name="insurance" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_"><sort><column index="1" mode="0"/></sort><column_widths><column index="1" value="58"/><column index="2" value="81"/><column index="3" value="174"/><column index="4" value="52"/><column index="5" value="96"/><column index="6" value="75"/><column index="7" value="78"/><column index="8" value="114"/><column index="9" value="93"/><column index="10" value="74"/><column index="11" value="75"/><column index="12" value="70"/><column index="13" value="99"/><column index="14" value="96"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table></browse_table_settings></tab_browse><tab_sql><sql name="SQL 1">-- #1. Write a query to calculate what % of the customers have made a claim in the current exposure period[i.e. in the given dataset]?
+select count(*) as totcust,(select count(*) from insurance where claimnb!=0) as positiveclaims,((select count(*) from insurance where claimnb!=0)*100.0/(select count(*) from insurance)) as percclaim from insurance;
+
+-- #2. 2.1. Create a new column as 'claim_flag' in the table 'auto_insurance_risk' as integer datatype
+alter table insurance add column claim_flag int NULL;
+
+-- 2.2 Set the value to 1 when ClaimNb is greater than 0 and set the value to 0 otherwise. (1.5)
+UPDATE insurance SET claim_flag=1 WHERE claimnb!=0;
+UPDATE insurance SET claim_flag=0 WHERE claimnb=0;
+
+-- #3. 3.1. What is the average exposure period for those who have claimed? (1) 
+select avg(exposure) from insurance where claim_flag=1;
+
+-- 3.2. What do you infer from the result? (1)
+-- exposure period is higher for those who made a Claim
+
+-- #4. 4.1. If we create an exposure bucket where buckets are like below, what is the % of total claims by these buckets? (2)   
+ select
+      case when claim_flag=1 and exposure between 0 and 0.25    then '1stperc'
+           when claim_flag=1 and exposure between 0.26 and 0.5   then ' 2ndperc'
+           when claim_flag=1 and exposure between 0.51 and 0.75  then ' 3rdperc'
+		   when claim_flag=1 and exposure&gt;0.75  then ' 4thperc'
+      end exposurebucket,
+      sum(ClaimNb)*100.0/(select sum(ClaimNb) from insurance)
+   from insurance  group by 1;
+
+-- to use these buckets in future questions, we can add an extra column which is marked corresponding to respective bucket.
+ alter table insurance add column exposurebucket int NULL;
+UPDATE insurance SET exposurebucket=1 WHERE exposure between 0 and 0.25;
+UPDATE insurance SET exposurebucket=2 WHERE exposure between 0.26 and 0.5;
+UPDATE insurance SET exposurebucket=3 WHERE exposure between 0.51 and 0.75;
+UPDATE insurance SET exposurebucket=4 WHERE exposure&gt;=0.76;
+-- we would be using (group by) exposurebucket column to use bucketing by exposure
+
+ 
+-- 4.2. What do you infer from the summary? (1)
+-- this reinforces the previous inference that exposure period is higher for those who made a claim. 45% of total claims came from greater than 0.75 exposure.
+
+-- #5. Which area has the higest number of average claims? Show the data in percentage w.r.t. the number of policies in corresponding Area
+select area, sum(claimnb) as totalclaims, count(*) as numberofpolicies, sum(ClaimNb)*100.0/count(*) as avgclaim
+ from insurance 
+ group by area
+ order by avgclaim 
+ desc limit 1; 
+
+-- #6. If we use these exposure bucket along with Area i.e. 
+-- group Area and Exposure Buckets together and look at the claim rate, an interesting pattern could be seen in the data. What is that?
+select area, exposurebucket, (sum(claim_flag)*100.0/count(*)) as claimrate from insurance group by area,exposurebucket;
+-- claim rate increases with exposure bucket in every area. also, average claim rate increases with area from A towards F
+ 
+-- #7. 7.1. If we look at average Vehicle Age for those who claimed vs those who didn't claim, what do you see in the summary? 
+select claim_flag, avg(vehage) from insurance group by claim_flag;
+--avg vehicle age for those who claimed is shorter than those who didn't
+
+-- 7.2. Now if we calculate the average Vehicle Age for those who claimed and group them by Area, what do you see in the summary?
+-- Any particular pattern you see in the data?
+select claim_flag,areA, avg(vehage) from insurance  where claim_flag=1 group by area;
+--average vehicle age decreases from A to F. which may either mean that people of area F frequently replace their vehicles with new ones (case for a developed economy) 
+--or they are recently growing economically so as to be able to buy vehicles for the first time(case for a developing economy) 
+
+-- #8. If we calculate the average vehicle age by exposure bucket(as mentioned above), 
+-- we see an interesting trend between those who claimed vs those who didn't. What is that?
+select claim_flag, exposurebucket,avg(vehage) from insurance group by exposurebucket, claim_flag;
+--in every exposure bucket average age of vehicles for those who claim is smaller than those who didn't. 
+-- Also, average age of vehicles increases with exposurebucket (as expected)
+   
+-- 9. Create a Claim_Ct flag on the ClaimNb field as below, and take average of the BonusMalus by Claim_Ct.   
+alter table insurance add column Claim_Ct char(15) NULL;
+UPDATE insurance SET claim_ct='1 claim' WHERE claimnb=1;
+UPDATE insurance SET claim_ct='no claims' WHERE claimnb=0;
+UPDATE insurance SET claim_ct='MT 1 claims' WHERE claimnb&gt;1;
+select claim_ct,avg(bonusmalus) from insurance group by claim_ct;
+select claimnb, avg(bonusmalus) from insurance group by claimnb;
+-- 9.2. What is the inference from the summary?
+-- average bonusmalus is highest for those who made multiple claims followed by single claim and no claim.
+-- If we group by absolute number of claims, we see that customers making 4 claims or higher are rare. However, their bonus malus is infact lower than those who claimed thrice. 
+
+
+-- #10. Using the same Claim_Ct logic created above, 
+-- if we aggregate the Density column (take average) by Claim_Ct, what inference can we make from the summary data.
+select claim_ct, avg(density) from insurance group by claim_ct;
+-- we can see that avg density from areas where multiple claims have been filed is highest followed by single claim and no claim. 
+-- the summary reveals that higher density translates to higher claims (i.e., higher accidents), thus the customers can be charged premiums for being in high density areas.
+
+-- 11. Which Vehicle Brand &amp; Vehicle Gas combination have the highest number of Average Claims
+select vehbrand, vehgas, sum(claimnb)*100.0/count(*) as claimrate from insurance group by vehbrand, vehgas  order by claimrate  desc limit 1 ;
+select vehbrand, vehgas, sum(claimnb) as claims from insurance group by vehbrand, vehgas  order by claims desc limit 1;
+-- vehicle B12 on regular gas has highest number of claims as well as highest % of claims on total policies. as defined in question 5: average claim=% of claims in total number of policies
+
+-- #12. List the Top 5 Regions &amp; Exposure[use the buckets created above] Combination from Claim Rate's perspective.
+-- Use claim_flag to calculate the claim rate.
+select region, exposurebucket, sum(claim_flag)*100.0/count(*) as claimrate from insurance group by exposurebucket, region order by claimrate desc limit 5;
+
+-- #13. 13.1. Are there any cases of illegal driving i.e. underaged folks driving and committing accidents?
+select count(*) from insurance where drivage&lt;18;
+-- no case of underaged drivers
+
+-- 13.2. Create a bucket on DrivAge and then take average of BonusMalus by this Age Group Category. WHat do you infer from the summary?
+select
+      case when drivage=18    then '1-beginner'
+           when drivage between 19 and 30   then '2-junior'
+           when drivage between 31 and 45 then '3-middleage'
+		   when drivage between 46 and 60  then '4-midsenior'
+		   when drivage&gt;60  then ' 5-senior'
+      end agebucket,
+      avg(bonusmalus)
+   from insurance  group by 1;
+  
+   select drivage, sum(claim_flag)*100.0/count(*) from insurance group by drivage having count(*)&gt;200;
+   
+-- average bonusmalus decreases with age
+-- Average bonusmalus decreases with age. This means that older drivers are supposed to be more experienced and are subjected to lesser bonusmalus.
+-- However, on viewing avg claim rate (acr) w.r.t driver age, acr decreases during 18 years till late 20s and again starts increasing after 60 years of age. 
+-- Drivers in senior category are claiming higher without being subjected to higher bonusmalus</sql><current_tab id="0"/></tab_sql></sqlb_project>
